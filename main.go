@@ -10,14 +10,17 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
+	"github.com/aws/aws-sdk-go/service/secretsmanager"
+	"github.com/aws/aws-secretsmanager-caching-go/secretcache"
 	"github.com/go-redis/redis/v8"
 )
 
 var (
-	redisClient      *redis.Client
-	redisUrl         = os.Getenv("REDIS_URL")  // redis://:qwerty@localhost:6379/0
-	queueName        = os.Getenv("QUEUE_NAME") // "sidekiq_namespace:queue:foo"
-	cloudwatchClient *cloudwatch.CloudWatch
+	redisClient          *redis.Client
+	secretCache, _       = secretcache.New()
+	cachedRedisUrlSecret string
+	queueName            = os.Getenv("QUEUE_NAME") // "sidekiq_namespace:queue:foo"
+	cloudwatchClient     *cloudwatch.CloudWatch
 )
 
 const (
@@ -29,17 +32,43 @@ func init() {
 		SharedConfigState: session.SharedConfigEnable,
 	}))
 
+	redisUrl, err := getRedisUrl(sess)
+	if err != nil {
+		panic(err)
+	}
+
 	opt, err := redis.ParseURL(redisUrl)
 	if err != nil {
 		panic(err)
 	}
 
 	redisClient = redis.NewClient(opt)
+
 	cloudwatchClient = cloudwatch.New(sess)
 }
 
 func main() {
 	lambda.Start(handler)
+}
+
+func getRedisUrl(sess *session.Session) (string, error) {
+	svc := secretsmanager.New(sess)
+
+	// Get the secret value
+	if cachedRedisUrlSecret == "" {
+		input := &secretsmanager.GetSecretValueInput{
+			SecretId: aws.String("REDIS_URL"),
+			// VersionStage: aws.String("AWSCURRENT"),
+		}
+		result, err := svc.GetSecretValue(input)
+		if err != nil {
+			panic(err)
+		}
+
+		cachedRedisUrlSecret = *result.SecretString
+	}
+
+	return cachedRedisUrlSecret, nil
 }
 
 func handler(ctx context.Context) error {
