@@ -1,0 +1,21 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Resources:
+  MyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: main
+      Runtime: go1.x
+      CodeUri: ..
+      MemorySize: 128
+      Timeout: 10
+      Environment:
+        Variables:
+          REDIS_URL: redis://0.0.0.0:6379/0
+          QUEUE_NAME: sidekiq_namespace:queue:default
+      Events:
+        Schedule:
+          Type: Schedule
+          Properties:
+            ScheduleExpression: rate(1 minute)
+ 
